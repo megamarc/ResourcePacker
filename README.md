@@ -12,9 +12,9 @@ General purpose asset packer with optional AES-128 encryption
 To create asset package, the `respack` command-line tool is used. Visual Studio 2017 project and precompiled binary for windows is supplied, can be built from source.
 
 ```
-respack input_list [aes_key]\n");
-  input_list : text file with list of assets, one per line\n");
-  aes_key    : optional AES-128 key for encryption\n\n");
+respack input_list [aes_key]
+  input_list : text file with list of assets, one per line
+  aes_key    : optional AES-128 key for encryption
 ```
 ## Accessing package assets
 To use created packages, include all contents inside the `src` folder and `include/ResPack.h` file inside your project. Test subproject shows example usage.
