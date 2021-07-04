@@ -13,14 +13,14 @@
 #include <string.h>
 #include <ctype.h>
 #include "aes.h"
-#include "Hash.h"
+#include "crc32.h"
+#include "md5.h"
 #include "ResPack.h"
 
 #define KEY_SIZE	128
 #define FILE_ID		"ResPack"
 
 static uint8_t iv[AES_BLOCK_SIZE] = { 0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f };
-static uint32_t key[60] = { 0 };
 
 /* asset descriptor register */
 typedef struct
@@ -79,7 +79,7 @@ static uint32_t path2hash(const char* filename)
 	strncpy(path, filename, sizeof(path));
 	path[sizeof(path) - 1] = 0;
 	normalize_path(path);
-	return hash(0, path, strlen(path));
+	return crc32(0, path, strlen(path));
 }
 
 /* finds given entry inside a resource pack */
@@ -107,37 +107,50 @@ static ResEntry* find_entry(ResPack rp, const char* filename)
 static void* load_asset(ResPack rp, ResEntry* entry)
 {
 	uint32_t crc;
-	void* buffer = malloc(entry->data_size);
+	uint8_t* buffer = malloc(entry->data_size + 1);
 	if (buffer == NULL)
 		return NULL;
 
 	fseek(rp->pf, entry->offset, SEEK_SET);
 	if (rp->encrypted == true)
 	{
-		void* cypher = malloc(entry->pack_size);
-		void* content = malloc(entry->pack_size);
-		fread(cypher, entry->pack_size, 1, rp->pf);
-		aes_decrypt_cbc(cypher, entry->pack_size, content, rp->key, KEY_SIZE, iv);
-		memcpy(buffer, content, entry->data_size);
-		free(content);
-		free(cypher);
+		void* cyphertext = malloc(entry->pack_size);
+		void* plaintext = malloc(entry->pack_size);
+		fread(cyphertext, entry->pack_size, 1, rp->pf);
+		aes_decrypt_cbc(cyphertext, entry->pack_size, plaintext, rp->key, KEY_SIZE, iv);
+		memcpy(buffer, plaintext, entry->data_size);
+		free(plaintext);
+		free(cyphertext);
 	}
 	else
 		fread(buffer, entry->data_size, 1, rp->pf);
 
 	/* validate integrity */
-	crc = hash(0, buffer, entry->data_size);
-	if (crc != entry->crc)
+	crc = crc32(0, buffer, entry->data_size);
+	if (crc == entry->crc)
+		buffer[entry->data_size] = 0;	// NULL-terminated string
+	else
 	{
 		free(buffer);
 		buffer = NULL;
 	}
+	return (void*)buffer;
+}
 
-	return buffer;
+/* builds AES key schedule using md5 of variable length passphrase */
+static void build_key(const char* passphrase, uint32_t* key)
+{
+	MD5_CTX md5c;
+	uint8_t md5_result[16] = { 0 };
+
+	MD5_Init(&md5c);
+	MD5_Update(&md5c, passphrase, strlen(passphrase));
+	MD5_Final(md5_result, &md5c);
+	aes_key_setup(md5_result, key, KEY_SIZE);
 }
 
 /* opens a resource pack */
-ResPack ResPack_Open(const char* filename, const char* key)
+ResPack ResPack_Open(const char* filename, const char* passphrase)
 {
 	ResPack rp = NULL;
 	ResHeader res_header;
@@ -164,11 +177,9 @@ ResPack ResPack_Open(const char* filename, const char* key)
 	rp->pf = pf;
 	
 	/* prepare AES-128 key*/
-	if (key != NULL)
+	if (passphrase != NULL)
 	{
-		uint8_t padded_key[16] = { 0 };
-		strncpy(padded_key, key, sizeof(padded_key));
-		aes_key_setup(padded_key, rp->key, KEY_SIZE);
+		build_key(passphrase, rp->key);
 		rp->encrypted = true;
 	}
 
@@ -263,12 +274,11 @@ void ResPack_CloseAsset(ResAsset asset)
 	}
 }
 
-/* loads file to memory, padded to 16 byte boundary for AES */
-static void* load_file(const char* filename, uint32_t padding, uint32_t* data_size, uint32_t* pack_size)
+/* loads file to memory */
+static void* load_file(const char* filename, uint32_t* data_size)
 {
 	FILE* pf;
 	uint32_t size;
-	uint32_t pad_size;
 	void* buffer;
 
 	pf = fopen(filename, "rb");
@@ -277,24 +287,18 @@ static void* load_file(const char* filename, uint32_t padding, uint32_t* data_si
 
 	fseek(pf, 0, SEEK_END);
 	size = ftell(pf);
-	if (padding > 1)
-		pad_size = ((size + padding - 1) / padding) * padding;
-	else
-		pad_size = size;
 	fseek(pf, 0, SEEK_SET);
 
-	buffer = malloc(pad_size);
-	memset(buffer, 0, pad_size);
+	buffer = malloc(size);
 	fread(buffer, size, 1, pf);
 	fclose(pf);
 
 	*data_size = size;
-	*pack_size = pad_size;
 	return buffer;
 }
 
 /* builds a resource pack, returns number of assets */
-int ResPack_Build(const char* filelist, const char* aes_key)
+int ResPack_Build(const char* filelist, const char* passphrase)
 {
 	FILE* pf_list;
 	FILE* pf_output;
@@ -306,6 +310,7 @@ int ResPack_Build(const char* filelist, const char* aes_key)
 	uint32_t c;
 	uint32_t offset;
 	int count = 0;
+	uint32_t key[60] = { 0 };
 
 	/* open input list */
 	strncpy(filename, filelist, sizeof(filename));
@@ -329,8 +334,8 @@ int ResPack_Build(const char* filelist, const char* aes_key)
 	pf_output = fopen(filename, "wb");
 
 	/* optionally starts AES-128 encryption */
-	if (aes_key != NULL)
-		aes_key_setup(aes_key, key, KEY_SIZE);
+	if (passphrase != NULL)
+		build_key(passphrase, key);
 
 	/* generates output */
 	res_entries = calloc(res_header.num_regs, sizeof(ResEntry));
@@ -345,7 +350,7 @@ int ResPack_Build(const char* filelist, const char* aes_key)
 		dot = strchr(line, '\n');
 		if (dot != NULL)
 			*dot = 0;
-		content = load_file(line, AES_BLOCK_SIZE, &entry->data_size, &entry->pack_size);
+		content = load_file(line, &entry->data_size);
 		if (content == NULL)
 		{
 			printf("ResPack_Build warning: asset \"%s\" not found\n", line);
@@ -353,19 +358,36 @@ int ResPack_Build(const char* filelist, const char* aes_key)
 		}
 
 		/* update entry header */
+		entry->pack_size = entry->data_size;
 		entry->offset = offset;
 		entry->id = path2hash(line);
-		entry->crc = hash(0, content, entry->data_size);
+		entry->crc = crc32(0, content, entry->data_size);
 		count += 1;
 
 		/* optional encryption */
-		if (aes_key != NULL)
+		if (passphrase != NULL)
 		{
-			void* cypher = malloc(entry->pack_size);
-			aes_encrypt_cbc(content, entry->pack_size, cypher, key, KEY_SIZE, iv);
+			/* calc full block size */
+			uint32_t pack_size = (entry->data_size + AES_BLOCK_SIZE - 1) & ~(AES_BLOCK_SIZE - 1);
+			if (pack_size == entry->data_size)
+				pack_size += AES_BLOCK_SIZE;
+			entry->pack_size = pack_size;
+
+			/* allocate & fill with PKCS#7 padding value*/
+			uint8_t* plaintext = malloc(pack_size);
+			uint32_t pkcs7_value = pack_size - entry->data_size;
+			memcpy(plaintext, content, entry->data_size);
+			memset(&plaintext[entry->data_size], pkcs7_value, pkcs7_value);
 			free(content);
-			content = cypher;
+
+			/* encrypt & discard plaintext */
+			void* cyphertext = malloc(pack_size);
+			aes_encrypt_cbc(plaintext, entry->pack_size, cyphertext, key, KEY_SIZE, iv);
+			content = cyphertext;
+			free(plaintext);
 		}
+
+		//printf("%s id=%08X, size=%d, pack_size=%d, crc32=%08X\n", line, entry->id, entry->data_size, entry->pack_size, entry->crc);
 
 		/* write to file */
 		fseek(pf_output, offset, SEEK_SET);

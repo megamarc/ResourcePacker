@@ -18,13 +18,16 @@
     <ClCompile Include="..\src\aes.c">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\Hash.c">
-      <Filter>Archivos de origen</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\ResourcePacker.c">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
     <ClCompile Include="test.c">
+      <Filter>Archivos de origen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\crc32.c">
+      <Filter>Archivos de origen</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\md5.c">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
   </ItemGroup>
@@ -32,10 +35,13 @@
     <ClInclude Include="..\src\aes.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\Hash.h">
+    <ClInclude Include="..\include\ResPack.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
-    <ClInclude Include="..\include\ResPack.h">
+    <ClInclude Include="..\src\crc32.h">
+      <Filter>Archivos de encabezado</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\md5.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
   </ItemGroup>

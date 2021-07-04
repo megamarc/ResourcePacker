@@ -71,14 +71,16 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\src\aes.c" />
-    <ClCompile Include="..\src\Hash.c" />
+    <ClCompile Include="..\src\crc32.c" />
+    <ClCompile Include="..\src\md5.c" />
     <ClCompile Include="..\src\ResourcePacker.c" />
     <ClCompile Include="test.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\include\ResPack.h" />
     <ClInclude Include="..\src\aes.h" />
-    <ClInclude Include="..\src\Hash.h" />
+    <ClInclude Include="..\src\crc32.h" />
+    <ClInclude Include="..\src\md5.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
