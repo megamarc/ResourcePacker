@@ -35,5 +35,9 @@ respack input_list [aes_key]
 ## Accessing package assets
 To use created packages, include `librespack.a` and `include/ResPack.h` file inside your project. Test subproject shows example usage.
 
+## GUI
+There's a nice GUI frontend developed by @vonhoff in case you don't want to directly mess with text files and a CLI application:
+https://github.com/vonhoff/ResourcePackerGUI
+
 ## Acknowledgements
 This project uses AES128 encryption code by Brad Conte (brad@bradconte.com) and crc32 implementation by Gary S. Brown.
